@@ -32,7 +32,11 @@ def main(argv):
             sys.exit()
         elif opt in ("-d", "--directory"):
             userdirectory = arg
-  
+    
+    if CLIENT_ID == '' or CLIENT_SECRET == '':
+        print("Praw not configured. Please supply CLIENT_ID and CLIENT_SECRET in 'conf.py'\nExiting...")
+        sys.exit(0)    
+
     PASSWORD = getpass.getpass(prompt="Enter Reddit password:", stream=None)
     reddit = praw.Reddit(client_id=CLIENT_ID, password=PASSWORD, username=USERNAME, client_secret=CLIENT_SECRET, user_agent=USER_AGENT)
     user = str(reddit.user.me())
