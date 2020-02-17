@@ -4,7 +4,7 @@ Save your Reddit saves! This python script will authenticate through Praw to you
 Differentiate between photos, text submission, GIFs/videos, or download them all! This script is intended for personal use, and requires an active app authentication in Reddit. If you are unsure of how to accomplish this, please check the [API docs](https://github.com/reddit-archive/reddit/wiki/OAuth2).
 
 **Required python libraries:**
-- url_normalizer
+- url_normalize
 - bs4
 - praw
 
