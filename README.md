@@ -11,3 +11,8 @@ Differentiate between photos, text submission, GIFs/videos, or download them all
 Usage ~ `python3 run.py -d <destination directory>`
 
 If no destination directory is defined, saves will be downloaded the user's home directory: `~/RescueReddit/`
+
+**TO-DO:**
+- Proper logging
+- Add more media types
+- Increase efficiency
