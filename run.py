@@ -1,14 +1,24 @@
-#!/usr/bin/env python
-
-import praw, prawcore
-from praw.models import Submission
-from praw.models import Subreddit
-import sys, getopt
-import re, os, requests, getpass, logging
-from shutil import copyfile
-from videoparser import extract_mp4
-from url_normalize import url_normalize
 import configparser
+from shutil import copyfile
+import os
+import sys
+import re
+import getpass
+import requests
+import praw
+import prawcore
+from praw.models import Submission
+from url_normalize import url_normalize
+from videoparser import extract_mp4
+# import logging
+#
+# handler = logging.StreamHandler()
+# handler.setLevel(logging.DEBUG)
+# logger = logging.getLogger('prawcore')
+# logger.setLevel(logging.DEBUG)
+# logger.addHandler(handler)
+
+CONFIG = configparser.ConfigParser()
 
 def is_downloadable(url):
     h = requests.head(url, allow_redirects=True)
@@ -21,47 +31,50 @@ def is_downloadable(url):
     return True
 
 def main(argv):
-    userdirectory = ""
-    try:
-        opts, args = getopt.getopt(argv, "hd:",["directory="])
-    except getopt.GetoptError:
-        print("run.py -d <directory>")
-        sys.exit(2)
-    for opt, arg in opts:
-        if opt == '-h':
-            print("run.py -d <directory>")
-            sys.exit()
-        elif opt in ("-d", "--directory"):
-            userdirectory = arg
 
-    config = configparser.ConfigParser()
     try:
         file = open("config.ini")
     except FileNotFoundError:
+        # config not found
         print("config.ini not found. Starting setup...")
+
+        # copy sample configuration template from root
         copyfile("sample_config.ini", "config.ini")
-        config.read('config.ini')
-        print(config.sections())
+
+        # begin user input for new configuration
+        CONFIG.read('config.ini')
         print("Reddit username: ")
-        config['rescuereddit']['USERNAME'] = input()
-        config['rescuereddit']['PASSWORD'] = getpass.getpass(prompt='Reddit Password: ', stream=None)
+        CONFIG['rescuereddit']['username'] = input()
+        CONFIG['rescuereddit']['password'] = getpass.getpass(prompt='Reddit Password: ', stream=None)
         print("client_secret: ")
-        config['rescuereddit']['CLIENT_SECRET'] = input()
+        CONFIG['rescuereddit']['client_secret'] = input()
         print("client_id: ")
-        config['rescuereddit']['CLIENT_ID'] = input()
+        CONFIG['rescuereddit']['client_id'] = input()
+        print("Define directory? (enter for default): ")
+        dir = input()
+        if dir == "":
+            print("Using home directory...")
+        elif dir != "":
+            CONFIG['rescuereddit']['user_dir'] = dir
         with open('config.ini', 'w') as configfile:
-            config.write(configfile)
+            CONFIG.write(configfile)
 
-    config.read('config.ini')
+    CONFIG.read('config.ini')
     # Define Reddit praw variables
-    CLIENT_ID = config['rescuereddit']['CLIENT_ID']
-    CLIENT_SECRET = config['rescuereddit']['CLIENT_SECRET']
-    USERNAME = config['rescuereddit']['USERNAME']
-    PASSWORD = config['rescuereddit']['PASSWORD']
-    USER_AGENT = 'script:rescue-reddit:v0.1.4 (by /u/danishkaiju)'
+    client_id = CONFIG['rescuereddit']['client_id']
+    client_secret = CONFIG['rescuereddit']['client_secret']
+    username = CONFIG['rescuereddit']['username']
+    password = CONFIG['rescuereddit']['password']
+    user_agent = 'script:rescue-reddit:v0.1.4 (by /u/danishkaiju)'
+    userdirectory = CONFIG['rescuereddit']['user_dir']
 
-    reddit = praw.Reddit(client_id=CLIENT_ID, password=PASSWORD, username=USERNAME, client_secret=CLIENT_SECRET, user_agent=USER_AGENT)
+    reddit = praw.Reddit(client_id=client_id, password=password, username=username, client_secret=client_secret, user_agent=user_agent)
     user = str(reddit.user.me())
+
+    # saved_count = 0
+    # for saves in reddit.user.me().saved(limit=None):
+    #     saved_count += 1
+    # print(saved_count)
 
     print("Successfully connected to user: \033[93m" + user + '\x1b[0m')
     print("==========")
@@ -92,10 +105,10 @@ def download(userdirectory, media, saves, counter):
         name, ext = os.path.splitext(saves.url)
 
         # Check for nameless files
-        if filename == '' :
-            truncatedFilename = ('File_%s' % counter)
+        if filename == '':
+            truncated_filename = ('File_%s' % counter)
         else:
-            truncatedFilename = (filename[:25] + '..') if len(filename) > 25 else filename
+            truncated_filename = (filename[:25] + '..') if len(filename) > 25 else filename
 
         # Remove crap after question mark in URl
         pattern = re.compile(r'\?(.*)', re.UNICODE)
@@ -105,49 +118,42 @@ def download(userdirectory, media, saves, counter):
             # Verify content type
             if is_downloadable(saves.url):
                 makedir(userdirectory, saves)
-                print('Title: '+ truncatedFilename +ext)
-                print('URL: ' + saves.url)
+                print("*", end='', flush=True)
                 r = requests.get(saves.url, allow_redirects=True)
-                open(truncatedFilename +ext, 'wb').write(r.content)
+                open(truncated_filename +ext, 'wb').write(r.content)
             else:
-                print("\033[93m" + saves.url + '\x1b[0m')
-                print("\033[93mUnable to retireive content..." + '\x1b[0m')
-
+                print("X", end='', flush=True)
         if((media == '3' or media == '1') and ('.gif' in saves.url)):
             # Verify content type
             if ext == '.gifv':
                 ext = '.mp4'
             if is_downloadable(saves.url):
                 makedir(userdirectory, saves)
-                print('Title: '+ truncatedFilename +ext)
-                print('URL: ' + saves.url)
+                print("*", end='', flush=True)
                 r = requests.get(saves.url, allow_redirects=True)
-                open(truncatedFilename +ext, 'wb').write(r.content)
+                open(truncated_filename +ext, 'wb').write(r.content)
             else:
                 for x in extract_mp4(saves.url):
                 # Verify content type
                     x = url_normalize(str(x))
                     if is_downloadable(x):
                         makedir(userdirectory, saves)
-                        print('Title: '+ truncatedFilename +ext)
-                        print('URL: ' + x)
+                        print("*", end='', flush=True)
                         r = requests.get(x, allow_redirects=True)
-                        open(truncatedFilename +ext, 'wb').write(r.content)
+                        open(truncated_filename +ext, 'wb').write(r.content)
                     else:
-                        print("\033[93m" + x + '\x1b[0m')
-                        print("\033[93mUnable to retireive content..." + '\x1b[0m')
+                        print("X", end='', flush=True)
 
         if((media == '4' or media == '1') and saves.is_self):
             makedir(userdirectory, saves)
-            print('Title: ' + truncatedFilename + ext)
-            print('URL: ' + saves.url)
+            print("*", end='', flush=True)
             subtext = str(saves.selftext)
-            open(truncatedFilename + '.md', 'w', encoding="utf-8").write(subtext)
+            open(truncated_filename + '.md', 'w', encoding="utf-8").write(subtext)
 
 def makedir(userdirectory, saves):
     # Crete Subreddit directory:
     sub = str(saves.subreddit)
-    if userdirectory == "":
+    if userdirectory == "default":
         if os.name == 'nt':
             path = os.path.expanduser('~') + "\\Documents\\RescueReddit\\" + sub
         else:
@@ -158,11 +164,11 @@ def makedir(userdirectory, saves):
     try:
         os.makedirs(os.path.expanduser(os.path.abspath(path)), exist_ok=False)
     except FileExistsError:
-        print ("%s already exists. Skipping..." % path)
+        pass
     except OSError:
-        print ("Creation of the directory %s failed" % path)
+        print("Creation of the directory %s failed" % path)
     else:
-        print ("Successfully created %s" % path)
+        pass
 
     os.chdir(path)
 
@@ -170,6 +176,10 @@ while True:
     try:
         main(sys.argv[1:])
     except KeyboardInterrupt:
+        CONFIG.read('config.ini')
+        if CONFIG['rescuereddit']['password'] == "<password>":
+            os.remove("config.ini")
+            print("\nRemoving unfinished configuration...")
         sys.exit(0)
     except prawcore.exceptions.OAuthException:
         print("Failed to authenticate, please try different credentials.")
