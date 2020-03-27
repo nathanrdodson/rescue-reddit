@@ -12,6 +12,8 @@ Usage ~ `python3 run.py -d <destination directory>`
 
 If no destination directory is defined, saves will be downloaded the user's home directory: `~/RescueReddit/`
 
+Please keep in mind that as per the [Reddit API docs](https://github.com/reddit-archive/reddit/wiki/API#rules), OAuth2 calls are limited to 60 requests every minute, which means that if you are downloading tons of your Reddit saves it will take some time. 
+
 **TO-DO:**
 - Proper logging
 - Add more media types

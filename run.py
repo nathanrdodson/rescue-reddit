@@ -10,15 +10,12 @@ import prawcore
 from praw.models import Submission
 from url_normalize import url_normalize
 from videoparser import extract_mp4
-# import logging
-#
-# handler = logging.StreamHandler()
-# handler.setLevel(logging.DEBUG)
-# logger = logging.getLogger('prawcore')
-# logger.setLevel(logging.DEBUG)
-# logger.addHandler(handler)
+import logging
 
+logging.basicConfig(filename="rescue.log",level=logging.DEBUG)
 CONFIG = configparser.ConfigParser()
+__location__ = os.path.realpath(
+os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 def is_downloadable(url):
     h = requests.head(url, allow_redirects=True)
@@ -33,7 +30,7 @@ def is_downloadable(url):
 def main(argv):
 
     try:
-        file = open("config.ini")
+        open(os.path.join(__location__, 'config.ini'));
     except FileNotFoundError:
         # config not found
         print("config.ini not found. Starting setup...")
@@ -45,7 +42,7 @@ def main(argv):
         CONFIG.read('config.ini')
         print("Reddit username: ")
         CONFIG['rescuereddit']['username'] = input()
-        CONFIG['rescuereddit']['password'] = getpass.getpass(prompt='Reddit Password: ', stream=None)
+        CONFIG['rescuereddit']['password'] = getpass.getpass(prompt='Reddit Password: \n', stream=None)
         print("client_secret: ")
         CONFIG['rescuereddit']['client_secret'] = input()
         print("client_id: ")
@@ -65,101 +62,124 @@ def main(argv):
     client_secret = CONFIG['rescuereddit']['client_secret']
     username = CONFIG['rescuereddit']['username']
     password = CONFIG['rescuereddit']['password']
-    user_agent = 'script:rescue-reddit:v0.1.4 (by /u/danishkaiju)'
-    userdirectory = CONFIG['rescuereddit']['user_dir']
+    user_agent = 'script:rescue-reddit:v0.1.0 (by /u/danishkaiju)'
 
     reddit = praw.Reddit(client_id=client_id, password=password, username=username, client_secret=client_secret, user_agent=user_agent)
-    user = str(reddit.user.me())
 
-    # saved_count = 0
-    # for saves in reddit.user.me().saved(limit=None):
-    #     saved_count += 1
-    # print(saved_count)
-
-    print("Successfully connected to user: \033[93m" + user + '\x1b[0m')
+    print("Successfully connected to user: \033[93m" + str(reddit.user.me()) + '\x1b[0m')
     print("==========")
-    print("What saves would you like to pull from Reddit?:\n", "[1] All media types\n", "[2] Photos\n", "[3] GIFs\n", "[4] Text Submissions")
+    print("What would you like to do?:\n[1] /r/<subreddit> Scraper\n[2] Download Saves")
     print("==========")
 
     userchoice = input()
 
-    counter = 1
-    for saves in reddit.user.me().saved(limit=None):
-        download(userdirectory, userchoice, saves, counter)
-        counter += 1
+    if userchoice == '1':
+        print("*No spaces, not case-sensitive*")
+        print("For limit ~ Please consider max of 1 submission/second ")
+        print("What subreddit to scrape?: ")
+        sub = input()
+        print("Sorting method?: \nTop\n---> [0] All time\n---> [1] 24 Hr\n---> [2] Week\n---> [3] Month\n---> [4] Year\n[5] Hot\n[6] Rising\n[7] New\n[8] Controverisal")
+        sort = int(input())
+        print("How many submissions to fetch?: ")
+        limit = int(input())
+        sub_scraper(reddit, sub, sort, limit)
+    elif userchoice == '2':
+        print("==========")
+        print("What saves would you like to pull from Reddit?:\n", "[1] All media types\n", "[2] Photos\n", "[3] GIFs\n", "[4] Text Submissions")
+        print("==========")
+        userchoice = input()
 
-    sys.exit(0)
+        for saves in reddit.user.me().saved(limit=None):
+            if isinstance(saves, Submission):
+                download(userchoice, saves, str(saves.subreddit))
 
-def download(userdirectory, media, saves, counter):
+        sys.exit(0)
 
-    if isinstance(saves, Submission):
+def sub_scraper(instance, sub, sort, limit):
 
-        # Convert Reddit title to string
-        filename = str(saves.title)
+    sort_list_map = {
+        "hot": instance.subreddit(sub).hot(limit=limit),
+        "new": instance.subreddit(sub).new(limit=limit),
+        "rising": instance.subreddit(sub).rising(limit=limit),
+        "controversial": instance.subreddit(sub).controversial(limit=limit),
+        "top-all": instance.subreddit(sub).top('all', limit=limit),
+        "top-day": instance.subreddit(sub).top('day', limit=limit),
+        "top-week": instance.subreddit(sub).top('week', limit=limit),
+        "top-month": instance.subreddit(sub).top('month', limit=limit),
+        "top-year": instance.subreddit(sub).top('year', limit=limit)
+    }
+    sort_list = ["top-all", "top-day", "top-week", "top-month", "top-year", "hot", "rising", "new", "controversial"]
+    for submission in sort_list_map[sort_list[sort]]:
+        download('1', submission, instance.subreddit(sub).display_name)
 
-        # Make filename alphanumeric
-        pattern = re.compile(r'[\W_]+', re.UNICODE)
-        filename = pattern.sub('', filename)
+def download(media, format, sub_name):
 
-        # Get file extension from URL
-        name, ext = os.path.splitext(saves.url)
+    # Convert Reddit title to string
+    filename = str(format.title)
 
-        # Check for nameless files
-        if filename == '':
-            truncated_filename = ('File_%s' % counter)
-        else:
-            truncated_filename = (filename[:25] + '..') if len(filename) > 25 else filename
+    # Make filename alphanumeric
+    filename = re.compile(r'[\W_]+', re.UNICODE).sub('', filename)
 
-        # Remove crap after question mark in URl
-        pattern = re.compile(r'\?(.*)', re.UNICODE)
-        ext = pattern.sub('', ext)
+    # Get file extension from URL
+    name, ext = os.path.splitext(format.url)
 
-        if((media == '2' or media == '1') and ('.png' in saves.url or '.jpg' in saves.url)):
-            # Verify content type
-            if is_downloadable(saves.url):
-                makedir(userdirectory, saves)
-                print("*", end='', flush=True)
-                r = requests.get(saves.url, allow_redirects=True)
-                open(truncated_filename +ext, 'wb').write(r.content)
-            else:
-                print("X", end='', flush=True)
-        if((media == '3' or media == '1') and ('.gif' in saves.url)):
-            # Verify content type
-            if ext == '.gifv':
-                ext = '.mp4'
-            if is_downloadable(saves.url):
-                makedir(userdirectory, saves)
-                print("*", end='', flush=True)
-                r = requests.get(saves.url, allow_redirects=True)
-                open(truncated_filename +ext, 'wb').write(r.content)
-            else:
-                for x in extract_mp4(saves.url):
-                # Verify content type
-                    x = url_normalize(str(x))
-                    if is_downloadable(x):
-                        makedir(userdirectory, saves)
-                        print("*", end='', flush=True)
-                        r = requests.get(x, allow_redirects=True)
-                        open(truncated_filename +ext, 'wb').write(r.content)
-                    else:
-                        print("X", end='', flush=True)
+    # Check for nameless files after truncation
+    if filename == '':
+        truncated_filename = ('File_%s')
+    else:
+        truncated_filename = (filename[:25] + '..') if len(filename) > 25 else filename
 
-        if((media == '4' or media == '1') and saves.is_self):
-            makedir(userdirectory, saves)
+    # Remove values including and after question mark in URL
+    ext = re.compile(r'\?(.*)', re.UNICODE).sub('', ext)
+
+    if((media == '2' or media == '1') and ('.png' in format.url or '.jpg' in format.url)):
+        # Verify content type
+        if is_downloadable(format.url):
+            makedir(sub_name)
             print("*", end='', flush=True)
-            subtext = str(saves.selftext)
-            open(truncated_filename + '.md', 'w', encoding="utf-8").write(subtext)
+            r = requests.get(format.url, allow_redirects=True)
+            open(truncated_filename +ext, 'wb').write(r.content)
+        else:
+            print("X", end='', flush=True)
+    if((media == '3' or media == '1') and ('.gif' in format.url)):
+        # Verify content type
+        if ext == '.gifv':
+            ext = '.mp4'
+        if is_downloadable(format.url):
+            makedir(sub_name)
+            print("*", end='', flush=True)
+            r = requests.get(format.url, allow_redirects=True)
+            open(truncated_filename +ext, 'wb').write(r.content)
+        else:
+            for x in extract_mp4(format.url):
+            # Verify content type
+                x = url_normalize(str(x))
+                if is_downloadable(x):
+                    makedir(sub_name)
+                    print("*", end='', flush=True)
+                    r = requests.get(x, allow_redirects=True)
+                    open(truncated_filename +ext, 'wb').write(r.content)
+                else:
+                    print("X", end='', flush=True)
 
-def makedir(userdirectory, saves):
+    if((media == '4' or media == '1') and format.is_self):
+        makedir(sub_name)
+        print("*", end='', flush=True)
+        subtext = str(format.selftext)
+        open(truncated_filename + '.md', 'w', encoding="utf-8").write(subtext)
+
+def makedir(sub_name):
+    CONFIG.read('config.ini')
+    userdirectory = CONFIG['rescuereddit']['user_dir']
+
     # Crete Subreddit directory:
-    sub = str(saves.subreddit)
     if userdirectory == "default":
         if os.name == 'nt':
-            path = os.path.expanduser('~') + "\\Documents\\RescueReddit\\" + sub
+            path = os.path.expanduser('~') + "\\Documents\\RescueReddit\\" + sub_name
         else:
-            path = os.path.expanduser('~') + "/RescueReddit/" + sub
+            path = os.path.expanduser('~') + "/RescueReddit/" + sub_name
     else:
-        path = os.path.abspath(userdirectory) + "/RescueReddit/" + sub
+        path = os.path.abspath(userdirectory) + "/RescueReddit/" + sub_name
 
     try:
         os.makedirs(os.path.expanduser(os.path.abspath(path)), exist_ok=False)
