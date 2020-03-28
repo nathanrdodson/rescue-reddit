@@ -1,6 +1,7 @@
 import configparser
 from shutil import copyfile
 import os
+import datetime
 import sys
 import re
 import getpass
@@ -10,22 +11,27 @@ import prawcore
 from praw.models import Submission
 from url_normalize import url_normalize
 from videoparser import extract_mp4
+import pdfkit
 import logging
 
 logging.basicConfig(filename="rescue.log",level=logging.DEBUG)
 CONFIG = configparser.ConfigParser()
+today = datetime.datetime.today()
 __location__ = os.path.realpath(
 os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 def is_downloadable(url):
-    h = requests.head(url, allow_redirects=True)
-    header = h.headers
-    content_type = header.get('content-type')
-    if 'text' in content_type.lower():
+    try:
+        h = requests.head(url, allow_redirects=True)
+        header = h.headers
+        content_type = header.get('content-type')
+        if 'text' in content_type.lower():
+            return False
+        if 'html' in content_type.lower():
+            return False
+        return True
+    except:
         return False
-    if 'html' in content_type.lower():
-        return False
-    return True
 
 def main(argv):
 
@@ -66,34 +72,36 @@ def main(argv):
 
     reddit = praw.Reddit(client_id=client_id, password=password, username=username, client_secret=client_secret, user_agent=user_agent)
 
-    print("Successfully connected to user: \033[93m" + str(reddit.user.me()) + '\x1b[0m')
-    print("==========")
-    print("What would you like to do?:\n[1] /r/<subreddit> Scraper\n[2] Download Saves")
-    print("==========")
+    print("\nSuccessfully connected to user: \033[93m" + str(reddit.user.me()) + '\x1b[0m')
 
-    userchoice = input()
+    while True:
+        print("\n==========")
+        print("What would you like to do?:\n[1] /r/<subreddit> Scraper\n[2] Download Saves")
+        print("==========")
 
-    if userchoice == '1':
-        print("*No spaces, not case-sensitive*")
-        print("For limit ~ Please consider max of 1 submission/second ")
-        print("What subreddit to scrape?: ")
-        sub = input()
-        print("Sorting method?: \nTop\n---> [0] All time\n---> [1] 24 Hr\n---> [2] Week\n---> [3] Month\n---> [4] Year\n[5] Hot\n[6] Rising\n[7] New\n[8] Controverisal")
-        sort = int(input())
-        print("How many submissions to fetch?: ")
-        limit = int(input())
-        sub_scraper(reddit, sub, sort, limit)
-    elif userchoice == '2':
-        print("==========")
-        print("What saves would you like to pull from Reddit?:\n", "[1] All media types\n", "[2] Photos\n", "[3] GIFs\n", "[4] Text Submissions")
-        print("==========")
         userchoice = input()
 
-        for saves in reddit.user.me().saved(limit=None):
-            if isinstance(saves, Submission):
-                download(userchoice, saves, str(saves.subreddit))
+        if userchoice == '1':
+            print("*No spaces, not case-sensitive*")
+            print("For limit ~ Please consider max of 1 submission/second ")
+            print("What subreddit to scrape?: ")
+            sub = input()
+            print("Sorting method?: \nTop\n---> [0] All time\n---> [1] 24 Hr\n---> [2] Week\n---> [3] Month\n---> [4] Year\n[5] Hot\n[6] Rising\n[7] New\n[8] Controverisal")
+            sort = int(input())
+            print("How many submissions to fetch?: ")
+            limit = int(input())
+            sub_scraper(reddit, sub, sort, limit)
+        elif userchoice == '2':
+            print("==========")
+            print("What saves would you like to pull from Reddit?:\n", "[1] All media types\n", "[2] Photos\n", "[3] GIFs\n", "[4] Text Submissions")
+            print("==========")
+            userchoice = input()
 
-        sys.exit(0)
+            for saves in reddit.user.me().saved(limit=None):
+                if isinstance(saves, Submission):
+                    download(userchoice, saves, str(saves.subreddit))
+        else:
+            break
 
 def sub_scraper(instance, sub, sort, limit):
 
@@ -163,30 +171,46 @@ def download(media, format, sub_name):
                     print("X", end='', flush=True)
 
     if((media == '4' or media == '1') and format.is_self):
-        makedir(sub_name)
-        print("*", end='', flush=True)
-        subtext = str(format.selftext)
-        open(truncated_filename + '.md', 'w', encoding="utf-8").write(subtext)
+        try:
+            makedir(sub_name)
+            print("*", end='', flush=True)
+            subtext = str(format.selftext)
+            #Check for no body. If no body, body is title of post
+            if subtext == "":
+                subtext = str(format.title)
+            open(truncated_filename + '.md', 'w', encoding="utf-8").write(subtext)
+        except:
+            print("X", end='', flush=True)
+
+    if((media == '5' or media == '1')):
+        try:
+            makedir(sub_name)
+            print("*", end='', flush=True)
+            pdfkit.from_url(str(format.url), truncated_filename + ".pdf")
+        except:
+            print("X", end='', flush=True)
 
 def makedir(sub_name):
     CONFIG.read('config.ini')
     userdirectory = CONFIG['rescuereddit']['user_dir']
+    if str(CONFIG['rescuereddit']['subdirectory']) == "False":
+        sub_name = ""
 
     # Crete Subreddit directory:
     if userdirectory == "default":
         if os.name == 'nt':
-            path = os.path.expanduser('~') + "\\Documents\\RescueReddit\\" + sub_name
+            path = os.path.expanduser('~') + "\\Documents\\RescueReddit\\" + "scrape_" + today.isoformat() + '\\' + sub_name
         else:
-            path = os.path.expanduser('~') + "/RescueReddit/" + sub_name
+            path = os.path.expanduser('~') + "/RescueReddit/" + "scrape_" + today.isoformat() + '/' + sub_name
     else:
-        path = os.path.abspath(userdirectory) + "/RescueReddit/" + sub_name
+        path = os.path.abspath(userdirectory) + "/RescueReddit/" + "scrape_" + today.isoformat() + '/' + sub_name
 
     try:
         os.makedirs(os.path.expanduser(os.path.abspath(path)), exist_ok=False)
     except FileExistsError:
         pass
     except OSError:
-        print("Creation of the directory %s failed" % path)
+        return 0
     else:
         pass
 
